@@ -42,6 +42,55 @@ struct MatchMaking {
     data: Mutex<Option<Client>>,
 }
 
+#[derive(Clone, Copy, Debug)]
+enum Player{
+    Player1,
+    Player2,
+}
+
+impl std::fmt::Display for Player {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Player::Player1 => write!(f, "1"),
+            Player::Player2 => write!(f, "2"),
+        }
+    }
+}
+
+impl Player {
+    fn flip(&self) -> Player {
+        match self {
+            Player::Player1 => Player::Player2,
+            Player::Player2 => Player::Player1,
+        }
+    }
+    fn from_int(value:u8) -> Player {
+        match value {
+            1 => Player::Player1,
+            _ => Player::Player2,
+        }
+    }
+    fn to_int(&self) -> u8 {
+        match self {
+            Player::Player1 => 1,
+            Player::Player2 => 2,
+        }
+    }
+}
+
+struct GameConnections{
+    connections: [Client; 2]
+}
+
+impl GameConnections{
+    pub fn get_conn(&mut self, player: Player) -> &mut Client{
+        match player{
+            Player::Player1 => &mut self.connections[0],
+            Player::Player2 => &mut self.connections[1],
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::registry()
@@ -173,30 +222,34 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<MatchM
         }
     };
 
-    let mut players = [Client { socket, who, uname }, peer];
+    let mut connections = GameConnections {connections: [Client { socket, who, uname }, peer] };
 
-    for i in 0..players.len() {
-        let match_name = players[flip_player(i)].uname.clone();
-        let r = send_message(&mut players, i, format!("matched against: {match_name}")).await;
+    // let mut players = [Client { socket, who, uname }, peer];
+
+    for i in 1..2 {
+        let player = Player::from_int(i);
+        let match_name = connections.get_conn(player.flip()).uname.clone();
+        let r = send_message(&mut connections, player, format!("matched against: {match_name}")).await;
         if r.is_err() {
             return;
         }
     }
 
-    let first: usize = {
+    let first: Player = {
         let mut rng = rand::thread_rng();
 
-        rng.gen_range(0..1)
+        Player::from_int(rng.gen_range(1..2))
+        
     };
 
-    let r = send_message(&mut players, first, format!("you are player:1")).await;
+    let r = send_message(&mut connections, first, format!("you are player:1")).await;
     if r.is_err() {
         return;
     }
 
     let r = send_message(
-        &mut players,
-        flip_player(first),
+        &mut connections,
+        first.flip(),
         format!("you are player:2"),
     )
     .await;
@@ -212,7 +265,7 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<MatchM
 
     loop {
         let r = send_message(
-            &mut players,
+            &mut connections,
             current_turn,
             format!("which column do you want to place (0-6)"),
         )
@@ -221,7 +274,7 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<MatchM
             return;
         }
 
-        let result = get_response(&mut players, current_turn).await;
+        let result = get_response(&mut connections, current_turn).await;
         match result {
             Ok(x) => {
                 let choice = x.parse::<usize>();
@@ -230,7 +283,7 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<MatchM
                         let allowed = game.place(x, current_turn);
                         if allowed {
                             let r = send_both(
-                                &mut players,
+                                &mut connections,
                                 format!("player:{current_turn} placement:{x}"),
                             )
                             .await;
@@ -241,16 +294,16 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<MatchM
                             if did_win {
                                 // let nickname = players[current_turn].uname.clone();
                                 let _ = send_both(
-                                    &mut players,
+                                    &mut connections,
                                     format!("winner! player:{current_turn}"),
                                 )
                                 .await;
                                 return;
                             }
-                            current_turn = flip_player(current_turn);
+                            current_turn = current_turn.flip();
                         } else {
                             let r = send_message(
-                                &mut players,
+                                &mut connections,
                                 current_turn,
                                 format!("invalid placement"),
                             )
@@ -261,7 +314,7 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<MatchM
                         }
                     }
                     Err(_) => {
-                        let r = send_message(&mut players, current_turn, format!("invalid input"))
+                        let r = send_message(&mut connections, current_turn, format!("invalid input"))
                             .await;
                         if r.is_err() {
                             return;
@@ -274,16 +327,16 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<MatchM
     }
 }
 
-async fn send_message(players: &mut [Client; 2], player: usize, message: String) -> Result<(), ()> {
-    if players[player]
+async fn send_message(players: &mut GameConnections, player: Player, message: String) -> Result<(), ()> {
+    if players.get_conn(player)
         .socket
         .send(Message::Text(message))
         .await
         .is_err()
     {
-        let who = players[player].who;
+        let who = players.get_conn(player).who;
         println!("client {who} abruptly disconnected");
-        let _ = players[flip_player(player)]
+        let _ = players.get_conn(player.flip())
             .socket
             .send(Message::Text("peer disconnected".to_owned()))
             .await;
@@ -292,23 +345,23 @@ async fn send_message(players: &mut [Client; 2], player: usize, message: String)
     Ok(())
 }
 
-async fn send_both(players: &mut [Client; 2], message: String) -> Result<(), ()> {
-    let _ = send_message(players, 0, message.clone()).await?;
-    let _ = send_message(players, 1, message).await?;
+async fn send_both(players: &mut GameConnections, message: String) -> Result<(), ()> {
+    let _ = send_message(players, Player::Player1, message.clone()).await?;
+    let _ = send_message(players, Player::Player2, message).await?;
     Ok(())
 }
 
-async fn get_response(players: &mut [Client; 2], player: usize) -> Result<String, ()> {
+async fn get_response(players: &mut GameConnections, player: Player) -> Result<String, ()> {
     loop {
-        if let Some(msg) = players[player].socket.recv().await {
+        if let Some(msg) = players.get_conn(player).socket.recv().await {
             if let Ok(msg) = msg {
                 if let Message::Text(x) = msg {
                     return Ok(x);
                 }
             } else {
-                let who = players[player].who;
+                let who = players.get_conn(player).who;
                 println!("client {who} abruptly disconnected");
-                let _ = players[flip_player(player)]
+                let _ = players.get_conn(player.flip())
                     .socket
                     .send(Message::Text("peer disconnected".to_owned()))
                     .await;
@@ -328,8 +381,8 @@ pub struct Game {
 
 impl Game {
     /// trys to place and returns true if successful
-    fn place(&mut self, x: usize, player: usize) -> bool {
-        let player = (player + 1) as u8;
+    fn place(&mut self, x: usize, player: Player) -> bool {
+        let player = (player.to_int() + 1) as u8;
         if x > 6 {
             return false;
         }
@@ -344,8 +397,8 @@ impl Game {
         return can_place;
     }
 
-    fn check_win(&self, player: usize) -> bool {
-        let player = (player + 1) as u8;
+    fn check_win(&self, player: Player) -> bool {
+        let player = (player.to_int() + 1) as u8;
         //check vertically
         for x in 0..self.board_xy.len() {
             let mut contigous_len = 0;
