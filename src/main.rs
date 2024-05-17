@@ -194,6 +194,9 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<MatchM
                 return;
             }
         }
+        else {
+            return;
+        }
 
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     }
