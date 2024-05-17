@@ -104,8 +104,6 @@ async fn ws_handler(
     ws.on_upgrade(move |socket| handle_socket(socket, addr, state))
 }
 
-
-
 fn flip_player(player: usize) -> usize {
     if player == 1 {
         return 0;
@@ -137,8 +135,7 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<MatchM
                 if let Message::Text(x) = msg {
                     if x.len() < 3 {
                         uname = x.to_owned().to_uppercase();
-                    }
-                    else {
+                    } else {
                         uname = x[..3].to_owned().to_uppercase();
                     }
                     break;
@@ -208,7 +205,9 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<MatchM
     }
 
     // let mut board_xy: [[u8; BOARD_WIDTH]; BOARD_HEIGHT] = [[0; BOARD_WIDTH]; BOARD_HEIGHT];
-    let mut game = Game{ board_xy: [[0; BOARD_WIDTH]; BOARD_HEIGHT] };
+    let mut game = Game {
+        board_xy: [[0; BOARD_WIDTH]; BOARD_HEIGHT],
+    };
     let mut current_turn = first;
 
     loop {
@@ -241,13 +240,15 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<MatchM
                             let did_win = game.check_win(current_turn);
                             if did_win {
                                 // let nickname = players[current_turn].uname.clone();
-                                let _ = send_both(&mut players, format!("winner! player:{current_turn}")).await;
+                                let _ = send_both(
+                                    &mut players,
+                                    format!("winner! player:{current_turn}"),
+                                )
+                                .await;
                                 return;
                             }
                             current_turn = flip_player(current_turn);
-                        } 
-
-                        else {
+                        } else {
                             let r = send_message(
                                 &mut players,
                                 current_turn,
@@ -327,130 +328,128 @@ pub struct Game {
 
 impl Game {
     /// trys to place and returns true if successful
-fn place(&mut self, x: usize, player: usize) -> bool {
-    let player = (player + 1) as u8;
-    if x > 6 {
+    fn place(&mut self, x: usize, player: usize) -> bool {
+        let player = (player + 1) as u8;
+        if x > 6 {
+            return false;
+        }
+        let mut can_place = false;
+        for i in 0..self.board_xy[0].len() {
+            if self.board_xy[x][i] == 0 {
+                self.board_xy[x][i] = player;
+                can_place = true;
+                break;
+            }
+        }
+        return can_place;
+    }
+
+    fn check_win(&self, player: usize) -> bool {
+        let player = (player + 1) as u8;
+        //check vertically
+        for x in 0..self.board_xy.len() {
+            let mut contigous_len = 0;
+            let mut in_contigous = false;
+
+            for y in 0..self.board_xy[0].len() {
+                if self.board_xy[x][y] == player {
+                    if !in_contigous {
+                        in_contigous = true;
+                    }
+
+                    contigous_len += 1;
+                    if contigous_len >= 4 {
+                        return true;
+                    }
+                } else {
+                    in_contigous = false;
+                    contigous_len = 0;
+                }
+            }
+        }
+
+        //check horizontally
+        for y in 0..self.board_xy[0].len() {
+            let mut contigous_len = 0;
+            let mut in_contigous = false;
+
+            for x in 0..self.board_xy.len() {
+                if self.board_xy[x][y] == player {
+                    if !in_contigous {
+                        in_contigous = true;
+                    }
+
+                    contigous_len += 1;
+                    if contigous_len >= 4 {
+                        return true;
+                    }
+                } else {
+                    in_contigous = false;
+                    contigous_len = 0;
+                }
+            }
+        }
+
+        //check diagonally from bottom left to top right
+        for x in 0..self.board_xy.len() {
+            let mut in_contigous = false;
+
+            for y in 0..self.board_xy[0].len() {
+                let mut check_x = x;
+                let mut check_y = y;
+
+                let mut contigous_len = 0;
+                while check_x < self.board_xy.len() && check_y < self.board_xy[0].len() {
+                    if self.board_xy[check_x][check_y] == player {
+                        if !in_contigous {
+                            in_contigous = true;
+                        }
+                        contigous_len += 1;
+
+                        if contigous_len >= 4 {
+                            return true;
+                        }
+                    } else {
+                        in_contigous = false;
+                        contigous_len = 0;
+                    }
+
+                    check_x += 1;
+                    check_y += 1;
+                }
+            }
+        }
+
+        //check diagonally from bottom right to top left
+        for x in 0..self.board_xy.len() as isize {
+            let mut in_contigous = false;
+
+            for y in 0..self.board_xy[0].len() {
+                let mut check_x = x;
+                let mut check_y = y;
+
+                let mut contigous_len = 0;
+                while check_x >= 0 && check_y < self.board_xy[0].len() {
+                    if self.board_xy[check_x as usize][check_y] == player {
+                        if !in_contigous {
+                            in_contigous = true;
+                        }
+                        contigous_len += 1;
+
+                        if contigous_len >= 4 {
+                            return true;
+                        }
+                    } else {
+                        in_contigous = false;
+                        contigous_len = 0;
+                    }
+
+                    check_x -= 1;
+                    check_y += 1;
+                }
+            }
+        }
+
         return false;
     }
-    let mut can_place = false;
-    for i in 0..self.board_xy[0].len() {
-        if self.board_xy[x][i] == 0 {
-            self.board_xy[x][i] = player;
-            can_place = true;
-            break;
-        }
-    }
-    return can_place;
 }
-
-fn check_win(&self, player: usize) -> bool {
-    let player = (player + 1) as u8;
-    //check vertically
-    for x in 0..self.board_xy.len() {
-        let mut contigous_len = 0;
-        let mut in_contigous = false;
-
-        for y in 0..self.board_xy[0].len() {
-            if self.board_xy[x][y] == player {
-                if !in_contigous {
-                    in_contigous = true;
-                }
-
-                contigous_len += 1;
-                if contigous_len >= 4 {
-                    return true;
-                }
-            } else {
-                in_contigous = false;
-                contigous_len = 0;
-            }
-        }
-    }
-
-    //check horizontally
-    for y in 0..self.board_xy[0].len() {
-        let mut contigous_len = 0;
-        let mut in_contigous = false;
-
-        for x in 0..self.board_xy.len() {
-            if self.board_xy[x][y] == player {
-                if !in_contigous {
-                    in_contigous = true;
-                }
-
-                contigous_len += 1;
-                if contigous_len >= 4 {
-                    return true;
-                }
-            } else {
-                in_contigous = false;
-                contigous_len = 0;
-            }
-        }
-    }
-
-    //check diagonally from bottom left to top right
-    for x in 0..self.board_xy.len() {
-        let mut in_contigous = false;
-
-        for y in 0..self.board_xy[0].len() {
-            let mut check_x = x;
-            let mut check_y = y;
-
-            let mut contigous_len = 0;
-            while check_x < self.board_xy.len() && check_y < self.board_xy[0].len() {
-                if self.board_xy[check_x][check_y] == player {
-                    if !in_contigous {
-                        in_contigous = true;
-                    }
-                    contigous_len += 1;
-
-                    if contigous_len >= 4 {
-                        return true;
-                    }
-                } else {
-                    in_contigous = false;
-                    contigous_len = 0;
-                }
-
-                check_x += 1;
-                check_y += 1;
-            }
-        }
-    }
-
-    //check diagonally from bottom right to top left
-    for x in 0..self.board_xy.len() as isize {
-        let mut in_contigous = false;
-
-        for y in 0..self.board_xy[0].len() {
-            let mut check_x = x;
-            let mut check_y = y;
-
-            let mut contigous_len = 0;
-            while check_x >= 0 && check_y < self.board_xy[0].len() {
-                if self.board_xy[check_x as usize][check_y] == player {
-                    if !in_contigous {
-                        in_contigous = true;
-                    }
-                    contigous_len += 1;
-
-                    if contigous_len >= 4 {
-                        return true;
-                    }
-                } else {
-                    in_contigous = false;
-                    contigous_len = 0;
-                }
-
-                check_x -= 1;
-                check_y += 1;
-            }
-        }
-    }
-
-    return false;
-}
-}
-
-
