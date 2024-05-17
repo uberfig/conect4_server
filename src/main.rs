@@ -371,6 +371,9 @@ async fn get_response(players: &mut GameConnections, player: Player) -> Result<S
                 return Err(());
             }
         }
+        else {
+            return Err(());
+        }
 
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     }
