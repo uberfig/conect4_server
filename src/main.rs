@@ -104,11 +104,7 @@ async fn ws_handler(
     ws.on_upgrade(move |socket| handle_socket(socket, addr, state))
 }
 
-const BOARD_WIDTH: usize = 7;
-const BOARD_HEIGHT: usize = 6;
-pub struct Game {
-    pub board_xy: [[u8; BOARD_WIDTH]; BOARD_HEIGHT],
-}
+
 
 fn flip_player(player: usize) -> usize {
     if player == 1 {
@@ -211,7 +207,8 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<MatchM
         return;
     }
 
-    let mut board_xy: [[u8; BOARD_WIDTH]; BOARD_HEIGHT] = [[0; BOARD_WIDTH]; BOARD_HEIGHT];
+    // let mut board_xy: [[u8; BOARD_WIDTH]; BOARD_HEIGHT] = [[0; BOARD_WIDTH]; BOARD_HEIGHT];
+    let mut game = Game{ board_xy: [[0; BOARD_WIDTH]; BOARD_HEIGHT] };
     let mut current_turn = first;
 
     loop {
@@ -231,7 +228,7 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<MatchM
                 let choice = x.parse::<usize>();
                 match choice {
                     Ok(x) => {
-                        let allowed = place(&mut board_xy, x, current_turn);
+                        let allowed = game.place(x, current_turn);
                         if allowed {
                             let r = send_both(
                                 &mut players,
@@ -241,9 +238,9 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<MatchM
                             if r.is_err() {
                                 return;
                             }
-                            let did_win = check_win(&board_xy, current_turn);
+                            let did_win = game.check_win(current_turn);
                             if did_win {
-                                let nickname = players[current_turn].uname.clone();
+                                // let nickname = players[current_turn].uname.clone();
                                 let _ = send_both(&mut players, format!("winner! player:{current_turn}")).await;
                                 return;
                             }
@@ -322,16 +319,23 @@ async fn get_response(players: &mut [Client; 2], player: usize) -> Result<String
     }
 }
 
-/// trys to place and returns true if successful
-fn place(board_xy: &mut [[u8; BOARD_WIDTH]; BOARD_HEIGHT], x: usize, player: usize) -> bool {
+const BOARD_WIDTH: usize = 7;
+const BOARD_HEIGHT: usize = 6;
+pub struct Game {
+    pub board_xy: [[u8; BOARD_WIDTH]; BOARD_HEIGHT],
+}
+
+impl Game {
+    /// trys to place and returns true if successful
+fn place(&mut self, x: usize, player: usize) -> bool {
     let player = (player + 1) as u8;
     if x > 6 {
         return false;
     }
     let mut can_place = false;
-    for i in 0..board_xy[0].len() {
-        if board_xy[x][i] == 0 {
-            board_xy[x][i] = player;
+    for i in 0..self.board_xy[0].len() {
+        if self.board_xy[x][i] == 0 {
+            self.board_xy[x][i] = player;
             can_place = true;
             break;
         }
@@ -339,15 +343,15 @@ fn place(board_xy: &mut [[u8; BOARD_WIDTH]; BOARD_HEIGHT], x: usize, player: usi
     return can_place;
 }
 
-fn check_win(board_xy: &[[u8; BOARD_WIDTH]; BOARD_HEIGHT], player: usize) -> bool {
+fn check_win(&self, player: usize) -> bool {
     let player = (player + 1) as u8;
     //check vertically
-    for x in 0..board_xy.len() {
+    for x in 0..self.board_xy.len() {
         let mut contigous_len = 0;
         let mut in_contigous = false;
 
-        for y in 0..board_xy[0].len() {
-            if board_xy[x][y] == player {
+        for y in 0..self.board_xy[0].len() {
+            if self.board_xy[x][y] == player {
                 if !in_contigous {
                     in_contigous = true;
                 }
@@ -364,12 +368,12 @@ fn check_win(board_xy: &[[u8; BOARD_WIDTH]; BOARD_HEIGHT], player: usize) -> boo
     }
 
     //check horizontally
-    for y in 0..board_xy[0].len() {
+    for y in 0..self.board_xy[0].len() {
         let mut contigous_len = 0;
         let mut in_contigous = false;
 
-        for x in 0..board_xy.len() {
-            if board_xy[x][y] == player {
+        for x in 0..self.board_xy.len() {
+            if self.board_xy[x][y] == player {
                 if !in_contigous {
                     in_contigous = true;
                 }
@@ -386,16 +390,16 @@ fn check_win(board_xy: &[[u8; BOARD_WIDTH]; BOARD_HEIGHT], player: usize) -> boo
     }
 
     //check diagonally from bottom left to top right
-    for x in 0..board_xy.len() {
+    for x in 0..self.board_xy.len() {
         let mut in_contigous = false;
 
-        for y in 0..board_xy[0].len() {
+        for y in 0..self.board_xy[0].len() {
             let mut check_x = x;
             let mut check_y = y;
 
             let mut contigous_len = 0;
-            while check_x < board_xy.len() && check_y < board_xy[0].len() {
-                if board_xy[check_x][check_y] == player {
+            while check_x < self.board_xy.len() && check_y < self.board_xy[0].len() {
+                if self.board_xy[check_x][check_y] == player {
                     if !in_contigous {
                         in_contigous = true;
                     }
@@ -416,16 +420,16 @@ fn check_win(board_xy: &[[u8; BOARD_WIDTH]; BOARD_HEIGHT], player: usize) -> boo
     }
 
     //check diagonally from bottom right to top left
-    for x in 0..board_xy.len() as isize {
+    for x in 0..self.board_xy.len() as isize {
         let mut in_contigous = false;
 
-        for y in 0..board_xy[0].len() {
+        for y in 0..self.board_xy[0].len() {
             let mut check_x = x;
             let mut check_y = y;
 
             let mut contigous_len = 0;
-            while check_x >= 0 && check_y < board_xy[0].len() {
-                if board_xy[check_x as usize][check_y] == player {
+            while check_x >= 0 && check_y < self.board_xy[0].len() {
+                if self.board_xy[check_x as usize][check_y] == player {
                     if !in_contigous {
                         in_contigous = true;
                     }
@@ -447,3 +451,6 @@ fn check_win(board_xy: &[[u8; BOARD_WIDTH]; BOARD_HEIGHT], player: usize) -> boo
 
     return false;
 }
+}
+
+
