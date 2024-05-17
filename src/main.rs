@@ -139,7 +139,12 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<MatchM
         if let Some(msg) = socket.recv().await {
             if let Ok(msg) = msg {
                 if let Message::Text(x) = msg {
-                    uname = x[..3].to_owned().to_uppercase();
+                    if x.len() < 3 {
+                        uname = x.to_owned().to_uppercase();
+                    }
+                    else {
+                        uname = x[..3].to_owned().to_uppercase();
+                    }
                     break;
                 }
             } else {
