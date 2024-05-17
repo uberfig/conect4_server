@@ -240,6 +240,7 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<MatchM
                             if did_win {
                                 let nickname = players[current_turn].uname.clone();
                                 let _ = send_both(&mut players, format!("winner! player:{nickname}")).await;
+                                return;
                             }
                             current_turn = flip_player(current_turn);
                         } 
