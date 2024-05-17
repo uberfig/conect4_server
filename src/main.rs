@@ -43,7 +43,7 @@ struct MatchMaking {
 }
 
 #[derive(Clone, Copy, Debug)]
-enum Player{
+enum Player {
     Player1,
     Player2,
 }
@@ -64,7 +64,7 @@ impl Player {
             Player::Player2 => Player::Player1,
         }
     }
-    fn from_int(value:u8) -> Player {
+    fn from_int(value: u8) -> Player {
         match value {
             1 => Player::Player1,
             _ => Player::Player2,
@@ -78,13 +78,13 @@ impl Player {
     }
 }
 
-struct GameConnections{
-    connections: [Client; 2]
+struct GameConnections {
+    connections: [Client; 2],
 }
 
-impl GameConnections{
-    pub fn get_conn(&mut self, player: Player) -> &mut Client{
-        match player{
+impl GameConnections {
+    pub fn get_conn(&mut self, player: Player) -> &mut Client {
+        match player {
             Player::Player1 => &mut self.connections[0],
             Player::Player2 => &mut self.connections[1],
         }
@@ -193,8 +193,7 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<MatchM
                 println!("client {who} abruptly disconnected");
                 return;
             }
-        }
-        else {
+        } else {
             return;
         }
 
@@ -225,14 +224,21 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<MatchM
         }
     };
 
-    let mut connections = GameConnections {connections: [Client { socket, who, uname }, peer] };
+    let mut connections = GameConnections {
+        connections: [Client { socket, who, uname }, peer],
+    };
 
     // let mut players = [Client { socket, who, uname }, peer];
 
     for i in 1..2 {
         let player = Player::from_int(i);
         let match_name = connections.get_conn(player.flip()).uname.clone();
-        let r = send_message(&mut connections, player, format!("matched against: {match_name}")).await;
+        let r = send_message(
+            &mut connections,
+            player,
+            format!("matched against: {match_name}"),
+        )
+        .await;
         if r.is_err() {
             return;
         }
@@ -242,7 +248,6 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<MatchM
         let mut rng = rand::thread_rng();
 
         Player::from_int(rng.gen_range(1..2))
-        
     };
 
     let r = send_message(&mut connections, first, format!("you are player:1")).await;
@@ -250,12 +255,7 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<MatchM
         return;
     }
 
-    let r = send_message(
-        &mut connections,
-        first.flip(),
-        format!("you are player:2"),
-    )
-    .await;
+    let r = send_message(&mut connections, first.flip(), format!("you are player:2")).await;
     if r.is_err() {
         return;
     }
@@ -317,8 +317,9 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<MatchM
                         }
                     }
                     Err(_) => {
-                        let r = send_message(&mut connections, current_turn, format!("invalid input"))
-                            .await;
+                        let r =
+                            send_message(&mut connections, current_turn, format!("invalid input"))
+                                .await;
                         if r.is_err() {
                             return;
                         }
@@ -330,8 +331,13 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<MatchM
     }
 }
 
-async fn send_message(players: &mut GameConnections, player: Player, message: String) -> Result<(), ()> {
-    if players.get_conn(player)
+async fn send_message(
+    players: &mut GameConnections,
+    player: Player,
+    message: String,
+) -> Result<(), ()> {
+    if players
+        .get_conn(player)
         .socket
         .send(Message::Text(message))
         .await
@@ -339,7 +345,8 @@ async fn send_message(players: &mut GameConnections, player: Player, message: St
     {
         let who = players.get_conn(player).who;
         println!("client {who} abruptly disconnected");
-        let _ = players.get_conn(player.flip())
+        let _ = players
+            .get_conn(player.flip())
             .socket
             .send(Message::Text("peer disconnected".to_owned()))
             .await;
@@ -364,14 +371,21 @@ async fn get_response(players: &mut GameConnections, player: Player) -> Result<S
             } else {
                 let who = players.get_conn(player).who;
                 println!("client {who} abruptly disconnected");
-                let _ = players.get_conn(player.flip())
+                let _ = players
+                    .get_conn(player.flip())
                     .socket
                     .send(Message::Text("peer disconnected".to_owned()))
                     .await;
                 return Err(());
             }
-        }
-        else {
+        } else {
+            let who = players.get_conn(player).who;
+            println!("client {who} abruptly disconnected");
+            let _ = players
+                .get_conn(player.flip())
+                .socket
+                .send(Message::Text("peer disconnected".to_owned()))
+                .await;
             return Err(());
         }
 
